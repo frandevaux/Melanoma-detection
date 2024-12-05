@@ -4,10 +4,7 @@ import os
 import cv2
 import pandas as pd
 import matplotlib.pyplot as plt
-from keras import Input
 from sklearn.model_selection import train_test_split
-import keras_tuner as kt
-
 
 # Configuración de rutas
 train_dir = 'melanoma_cancer_dataset/train'
@@ -34,42 +31,22 @@ X = X / 255.0
 # Dividir en train y validation
 X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
 
-# Definir el modelo con hiperparámetros
-def build_model(hp):
-    model = tf.keras.Sequential([
-        Input(shape=(150, 150, 3)),
-        tf.keras.layers.Conv2D(
-            filters=hp.Int('filters', min_value=32, max_value=128, step=32),
-            kernel_size=hp.Choice('kernel_size', values=[3, 5]),
-            activation='relu'
-        ),
-        tf.keras.layers.MaxPooling2D((2, 2)),
-        tf.keras.layers.Flatten(),
-        tf.keras.layers.Dense(
-            units=hp.Int('units', min_value=64, max_value=256, step=64),
-            activation='relu'
-        ),
-        tf.keras.layers.Dropout(hp.Float('dropout', 0.2, 0.5, step=0.1)),
-        tf.keras.layers.Dense(1, activation='sigmoid')
-    ])
+# Construir el modelo con los hiperparámetros especificados
+model = tf.keras.Sequential([
+    tf.keras.layers.Input(shape=(150, 150, 3)),
+    tf.keras.layers.Conv2D(filters=128, kernel_size=3, activation='relu'),
+    tf.keras.layers.MaxPooling2D(pool_size=(2, 2)),
+    tf.keras.layers.Flatten(),
+    tf.keras.layers.Dense(units=128, activation='relu'),
+    tf.keras.layers.Dropout(rate=0.4),
+    tf.keras.layers.Dense(1, activation='sigmoid')
+])
 
-    model.compile(
-        optimizer=tf.keras.optimizers.Adam(
-            hp.Choice('learning_rate', values=[1e-2, 1e-3, 1e-4])
-        ),
-        loss='binary_crossentropy',
-        metrics=['accuracy']
-    )
-    return model
-
-# Crear un tuner
-tuner = kt.RandomSearch(
-    build_model,
-    objective='val_accuracy',
-    max_trials=20,
-    executions_per_trial=1,
-    directory='my_dir2',
-    project_name='melanoma_tuning2'
+# Compilar el modelo
+model.compile(
+    optimizer=tf.keras.optimizers.Adam(learning_rate=0.0001),
+    loss='binary_crossentropy',
+    metrics=['accuracy']
 )
 
 # Crear el callback de EarlyStopping
@@ -132,36 +109,14 @@ def get_unique_trial_folder(base_path):
     return f"{base_path}/trial_{counter}"
 
 
-# Crear directorio para guardar resultados
+# Entrenar el modelo
 os.makedirs('results', exist_ok=True)
-
-# Realizar la búsqueda de hiperparámetros
-tuner.search(
-    X_train, y_train,
-    epochs=50,
-    validation_data=(X_val, y_val),
-    callbacks=[early_stopping, SaveResultsCallback()]
-)
-
-# Obtener el mejor modelo
-best_hps = tuner.get_best_hyperparameters(num_trials=1)[0]
-
-print(f"""
-Mejor número de filtros: {best_hps.get('filters')}
-Mejor tamaño del kernel: {best_hps.get('kernel_size')}
-Mejor número de unidades: {best_hps.get('units')}
-Mejor tasa de aprendizaje: {best_hps.get('learning_rate')}
-Mejor dropout: {best_hps.get('dropout')}
-""")
-
-# Entrenar el mejor modelo
-best_model = tuner.hypermodel.build(best_hps)
-history = best_model.fit(
+history = model.fit(
     X_train, y_train,
     epochs=50,
     validation_data=(X_val, y_val),
     callbacks=[early_stopping, SaveResultsCallback('final_model')]
 )
 
-# Guardar el mejor modelo
-best_model.save('best_melanoma_model2.h5')
+# Guardar el modelo
+model.save('best_melanoma_model_manual.h5')
