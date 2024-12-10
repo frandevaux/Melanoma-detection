@@ -1,3 +1,5 @@
+import json
+
 import tensorflow as tf
 import numpy as np
 import os
@@ -5,6 +7,7 @@ import cv2
 import pandas as pd
 import matplotlib.pyplot as plt
 from keras import Input
+from matplotlib import image as mpimg
 from sklearn.model_selection import train_test_split
 import keras_tuner as kt
 
@@ -66,7 +69,7 @@ def build_model(hp):
 tuner = kt.RandomSearch(
     build_model,
     objective='val_accuracy',
-    max_trials=20,
+    max_trials=1,
     executions_per_trial=1,
     directory='my_dir2',
     project_name='melanoma_tuning2'
@@ -79,29 +82,26 @@ early_stopping = tf.keras.callbacks.EarlyStopping(
     restore_best_weights=True
 )
 
-# Callback personalizado para guardar resultados en carpetas específicas
+
 class SaveResultsCallback(tf.keras.callbacks.Callback):
-    def __init__(self, base_path='results', folder_name=None):
+    def __init__(self, base_path='results', trial_name=None, hparams=None):
         super().__init__()
         self.base_path = base_path
-        self.folder_name = folder_name
+        self.trial_name = trial_name
 
     def on_train_end(self, logs=None):
-        # Si se proporciona un nombre, usarlo; de lo contrario, buscar un nombre único
-        if self.folder_name:
-            trial_folder = os.path.join(self.base_path, self.folder_name)
-        else:
-            trial_folder = get_unique_trial_folder(self.base_path)
-
-        # Crear la carpeta de resultados
+        # Definir carpeta única para cada trial
+        trial_folder = get_unique_trial_folder(self.base_path)
         os.makedirs(trial_folder, exist_ok=True)
 
         # Guardar resultados en CSV
         history_df = pd.DataFrame(self.model.history.history)
-        csv_filename = os.path.join(trial_folder, "trial_results.csv")
-        history_df.to_csv(csv_filename, index=False)
+        history_df.to_csv(os.path.join(trial_folder, "trial_results.csv"), index=False)
 
-        # Graficar y guardar Accuracy
+        # Guardar gráficos de Accuracy y Loss
+        accuracy_graph_path = os.path.join(trial_folder, "accuracy.png")
+        loss_graph_path = os.path.join(trial_folder, "loss.png")
+
         plt.figure(figsize=(10, 5))
         plt.plot(history_df['accuracy'], label='Train Accuracy')
         plt.plot(history_df['val_accuracy'], label='Validation Accuracy')
@@ -109,10 +109,9 @@ class SaveResultsCallback(tf.keras.callbacks.Callback):
         plt.xlabel('Epoch')
         plt.ylabel('Accuracy')
         plt.legend()
-        plt.savefig(os.path.join(trial_folder, "accuracy.png"))
+        plt.savefig(accuracy_graph_path)
         plt.close()
 
-        # Graficar y guardar Loss
         plt.figure(figsize=(10, 5))
         plt.plot(history_df['loss'], label='Train Loss')
         plt.plot(history_df['val_loss'], label='Validation Loss')
@@ -120,7 +119,7 @@ class SaveResultsCallback(tf.keras.callbacks.Callback):
         plt.xlabel('Epoch')
         plt.ylabel('Loss')
         plt.legend()
-        plt.savefig(os.path.join(trial_folder, "loss.png"))
+        plt.savefig(loss_graph_path)
         plt.close()
 
         print(f"Results saved to {trial_folder}")
@@ -131,14 +130,13 @@ def get_unique_trial_folder(base_path):
         counter += 1
     return f"{base_path}/trial_{counter}"
 
-
 # Crear directorio para guardar resultados
 os.makedirs('results', exist_ok=True)
 
 # Realizar la búsqueda de hiperparámetros
 tuner.search(
     X_train, y_train,
-    epochs=50,
+    epochs=1,
     validation_data=(X_val, y_val),
     callbacks=[early_stopping, SaveResultsCallback()]
 )
@@ -154,14 +152,28 @@ Mejor tasa de aprendizaje: {best_hps.get('learning_rate')}
 Mejor dropout: {best_hps.get('dropout')}
 """)
 
-# Entrenar el mejor modelo
-best_model = tuner.hypermodel.build(best_hps)
-history = best_model.fit(
-    X_train, y_train,
-    epochs=50,
-    validation_data=(X_val, y_val),
-    callbacks=[early_stopping, SaveResultsCallback('final_model')]
-)
 
-# Guardar el mejor modelo
-best_model.save('best_melanoma_model2.h5')
+
+
+
+def display_images(image_paths):
+    for image_path in image_paths:
+        if image_path and os.path.exists(image_path):
+            img = mpimg.imread(image_path)
+            plt.figure(figsize=(10, 5))
+            plt.imshow(img)
+            plt.axis('off')  # Ocultar los ejes
+            plt.title(os.path.basename(image_path))  # Mostrar el nombre del archivo como título
+            plt.show()
+        else:
+            print(f"Image not found: {image_path}")
+
+
+# Mostrar las imágenes de Accuracy y Loss del mejor modelo
+display_images(["results2/trial_1/accuracy.png", "results2/trial_1/loss.png"])
+
+# Obtener el mejor modelo entrenado desde Keras Tuner
+best_model = tuner.get_best_models(num_models=1)[0]
+
+# Guardar el modelo como archivo HDF5
+best_model.save('best_melanoma_model_tuned.h5')
